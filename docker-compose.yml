@@ -1,0 +1,48 @@
+# Local stack: LocalStack emulates S3 + KMS, so no AWS account is needed.
+services:
+  localstack:
+    image: localstack/localstack:3.8
+    environment:
+      SERVICES: s3,kms
+    ports: ["4566:4566"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      retries: 20
+
+  # One-shot: create the private bucket and the KMS key alias
+  aws-init:
+    image: amazon/aws-cli:2.18.0
+    depends_on:
+      localstack: { condition: service_healthy }
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: ap-south-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        aws s3api head-bucket --bucket file-locker 2>/dev/null || \
+          aws s3api create-bucket --bucket file-locker --create-bucket-configuration LocationConstraint=ap-south-1
+        aws kms describe-key --key-id alias/file-locker >/dev/null 2>&1 || {
+          KEY=$$(aws kms create-key --query KeyMetadata.KeyId --output text)
+          aws kms create-alias --alias-name alias/file-locker --target-key-id $$KEY
+        }
+        echo "bucket and KMS key ready"
+
+  app:
+    build: .
+    image: secure-file-locker
+    depends_on:
+      aws-init: { condition: service_completed_successfully }
+    environment:
+      LOCKER_API_KEY: dev-key-change-me
+      LOCKER_BUCKET: file-locker
+      LOCKER_KMS_KEY_ID: alias/file-locker
+      LOCKER_S3_ENDPOINT: http://localstack:4566       # how the app reaches S3
+      LOCKER_PRESIGN_ENDPOINT: http://localhost:4566   # how your browser reaches S3
+      AWS_REGION: ap-south-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    ports: ["8080:8080"]

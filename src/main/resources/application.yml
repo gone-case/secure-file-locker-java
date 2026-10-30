@@ -1,0 +1,23 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: ${MAX_FILE_SIZE:10MB}
+      max-request-size: ${MAX_FILE_SIZE:10MB}
+
+locker:
+  bucket: ${LOCKER_BUCKET:file-locker}
+  kms-key-id: ${LOCKER_KMS_KEY_ID:alias/file-locker}
+  presign-ttl: ${LOCKER_PRESIGN_TTL:5m}
+  region: ${AWS_REGION:ap-south-1}
+  endpoint: ${LOCKER_S3_ENDPOINT:}
+  presign-endpoint: ${LOCKER_PRESIGN_ENDPOINT:}
+  api-key: ${LOCKER_API_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

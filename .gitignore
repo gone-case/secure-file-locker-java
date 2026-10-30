@@ -1,0 +1,8 @@
+target/
+.idea/
+*.iml
+.vscode/
+.terraform/
+*.tfstate*
+.env
+sample.txt

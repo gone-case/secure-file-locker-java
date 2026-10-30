@@ -1,0 +1,39 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build and test
+        run: mvn -B verify
+
+  docker:
+    runs-on: ubuntu-24.04
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --build-arg SKIP_TESTS=true -t secure-file-locker .
+      - name: End-to-end test against LocalStack
+        run: |
+          docker compose up -d app
+          for i in $(seq 1 60); do curl -sf localhost:8080/actuator/health && break; sleep 2; done
+          set -e
+          KEY="X-API-Key: dev-key-change-me"
+          echo "hello locker" > sample.txt
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/files)" = 401
+          ID=$(curl -sf -H "$KEY" -F file=@sample.txt localhost:8080/files | jq -r .id)
+          curl -sf -H "$KEY" localhost:8080/files | jq -e --arg id "$ID" 'map(.id) | index($id) != null'
+          URL=$(curl -sf -H "$KEY" localhost:8080/files/$ID/download-url | jq -r .url)
+          test "$(curl -sf "$URL")" = "hello locker"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "$KEY" localhost:8080/files/$ID)" = 204
+          echo "end-to-end OK"
+      - if: failure()
+        run: docker compose logs
